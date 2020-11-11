@@ -26,7 +26,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:onClick="onBtnPlayPCM"
-        android:text="PCM 듣기"
+        android:text="PCM 듣기(AudioTrack)"
         />
 
     <Button
@@ -41,5 +41,12 @@
         android:layout_height="wrap_content"
         android:onClick="onBtnRecordWithMp3"
         android:text="녹음과 동시에 mp3 변경"/>
+
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:onClick="onBtnPlayMp3"
+        android:text="MP3 듣기(MediaPlayer)"
+        />
 
 </LinearLayout>

@@ -1,8 +1,7 @@
 package com.fire.javalame
 
 import android.annotation.SuppressLint
-import android.media.AudioRecord
-import android.media.MediaRecorder
+import android.media.*
 import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
@@ -10,10 +9,12 @@ import android.os.Message
 import android.util.Log
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
+import net.sourceforge.lame.lowlevel.LameDecoder
 import net.sourceforge.lame.lowlevel.LameEncoder
 import net.sourceforge.lame.mp3.Lame
 import net.sourceforge.lame.mp3.MPEGMode
 import java.io.*
+import java.nio.ByteBuffer
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import javax.sound.sampled.AudioFormat
@@ -22,17 +23,22 @@ class MainActivity : AppCompatActivity()
 {
     private var m_serviceExcutor: ExecutorService? = null
     private var m_recorder: AudioRecord? = null
+    private var m_audioTrack: AudioTrack? = null
     private var m_strPcmPath = ""
     private var m_strMp3Path = ""
 
     private var m_audioSource = MediaRecorder.AudioSource.MIC
     private var m_nSampleRates = 44100
-    private var m_nChannelCount = android.media.AudioFormat.CHANNEL_IN_STEREO
-    private var m_nAudioFormat = android.media.AudioFormat.ENCODING_PCM_16BIT
+    private var m_nChannelCount = android.media.AudioFormat.CHANNEL_IN_STEREO //CHANNEL 2
+    private var m_nAudioFormat = android.media.AudioFormat.ENCODING_PCM_16BIT // 16비트
 
     private var m_nRecoBufferSize = 0
+    private var m_nTrackBufferSize = 0
+
+    private val m_sdkPlayer: MediaPlayer = MediaPlayer()
 
     private var m_bRecord = false
+    private var m_bPlaying = false
 
     override fun onCreate(savedInstanceState: Bundle?)
     {
@@ -52,7 +58,7 @@ class MainActivity : AppCompatActivity()
     fun initViewSetting()
     {
         m_serviceExcutor = Executors.newSingleThreadExecutor()
-
+        m_nTrackBufferSize = AudioTrack.getMinBufferSize(m_nSampleRates, m_nChannelCount, m_nAudioFormat)
         m_nRecoBufferSize = AudioRecord.getMinBufferSize(m_nSampleRates, m_nChannelCount, m_nAudioFormat)
 
 
@@ -108,7 +114,69 @@ class MainActivity : AppCompatActivity()
 
     fun onBtnPlayPCM(view: View)
     {
+        m_bPlaying = true
 
+        class PlayPCMThread : Runnable
+        {
+            override fun run()
+            {
+                m_audioTrack = AudioTrack(
+                    AudioManager.STREAM_MUSIC,
+                    m_nSampleRates,
+                    m_nChannelCount,
+                    m_nAudioFormat,
+                    m_nTrackBufferSize,
+                    AudioTrack.MODE_STREAM
+                )
+
+                var fis: FileInputStream? = null
+                var dis : DataInputStream? = null
+
+                try
+                {
+                    fis = FileInputStream(m_strPcmPath)
+                    dis = DataInputStream(fis)
+                } catch (e: FileNotFoundException)
+                {
+                    m_bPlaying = false
+                    return
+                }
+                val buffer = ByteArray(m_nTrackBufferSize)
+                m_audioTrack?.play()
+                while (m_bPlaying)
+                {
+                    try
+                    {
+                        val nResult = dis.read(buffer, 0, m_nTrackBufferSize)
+                        if (nResult <= 0)
+                        {
+                            m_bPlaying = false
+                            break
+                        }
+                        m_audioTrack?.write(buffer, 0, nResult)
+                    } catch (e: java.lang.Exception)
+                    {
+                        m_bPlaying = false
+                        break
+                    }
+                }
+                m_audioTrack?.stop()
+                m_audioTrack?.release()
+                m_audioTrack?.flush()
+                m_audioTrack = null
+                m_bPlaying = false
+                try
+                {
+                    dis.close()
+                    fis.close()
+                } catch (e: IOException)
+                {
+                    e.printStackTrace()
+                }
+            }
+        }
+
+        m_serviceExcutor?.execute(PlayPCMThread())
     }
 
     fun onBtnChangeMP3(view: View)
@@ -155,7 +223,7 @@ class MainActivity : AppCompatActivity()
                     if (nReadSize >= 0)
                     {
                         val buffer = ByteArray(m_nRecoBufferSize)
-                        var bytesToTransfer = buffer.size
+                        val bytesToTransfer = buffer.size
                         val bytesWritten = encoder.encodeBuffer(recordData, currentPcmPosition, bytesToTransfer ,buffer)
                         if (bytesWritten > 0)
                         {
@@ -186,6 +254,25 @@ class MainActivity : AppCompatActivity()
             }
         }
         m_serviceExcutor?.execute(RecordWithMp3Thread())
+    }
+
+    fun onBtnPlayMp3(view: View)
+    {
+        class playMp3File : Runnable
+        {
+            override fun run()
+            {
+                m_sdkPlayer.reset()
+                m_sdkPlayer.setDataSource(m_strMp3Path)
+                m_sdkPlayer.prepare()
+                m_sdkPlayer.start()
+            }
+        }
+        if (!m_bPlaying)
+        {
+            m_bPlaying = true
+            m_serviceExcutor?.execute(playMp3File())
+        }
     }
 
     private val m_hOnHandler : Handler = @SuppressLint("HandlerLeak")
